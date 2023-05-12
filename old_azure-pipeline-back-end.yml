@@ -1,0 +1,128 @@
+resources:
+  repositories:
+    - repository: pythonModule
+      type: git
+      name: DMW/DataLark.Python
+      ref: develop
+  pipelines:
+    - pipeline: DDI # Name of the pipeline resource.
+      source: dataLark-build-and-drop-instaler
+      trigger: 
+        tags:
+          - '*'
+
+trigger:
+  tags:
+    include:
+    - '*'
+
+parameters:
+  - name: reason
+    type: string
+    default: $(Build.Reason)  # echo ${{parameters.reason}}
+  - name: SourceBranch
+    type: string
+    default: $(Build.SourceBranch)
+
+variables:
+- name: tag
+  value: initialValue
+- name: RESULT_CURL
+  value: initalValue
+
+stages: 
+  - stage: PullPythonImageInRegistry
+    displayName: PullPythonImageInRegistry
+    jobs:
+      - job: buildAndPushWithIncrementVersion
+        steps:
+          - checkout: self
+          - checkout: pythonModule
+          - bash: ls -a 
+          - powershell: |
+              $с = "$(Build.SourceBranch)"
+              if ($с -like 'refs/tags/*') {
+                  $b = "$(Build.SourceBranch)".Split("/")
+                  $a = $b[2]
+                  Write-Host "##vso[task.setvariable variable=tag;isoutput=true]$a"
+              }
+              else {
+                  $a = "draft.version-v.$(BuildRevision)"
+                  Write-Host "##vso[task.setvariable variable=tag;isoutput=true]$a"
+                }
+            name: getVersion
+          - bash: echo $(getVersion.tag)
+
+          - task: Docker@2
+            inputs:
+              containerRegistry: 'datalarkregistry.azurecr.io'
+              repository: 'docker-python'
+              command: 'buildAndPush'
+              Dockerfile: 'DataLark.Python/Dockerfile'
+              tags: |
+                 latest
+                 $(getVersion.tag)
+          
+          - task: Docker@2
+            inputs:
+              containerRegistry: 'datalarkregistry.azurecr.io'
+              repository: 'data-lark'
+              command: 'buildAndPush'
+              Dockerfile: 'DMW/docker/Dockerfile-server'
+              tags: |
+                 latest
+                 $(getVersion.tag)
+
+  - stage: deploy
+    displayName: Deployment in Kyma
+    dependsOn: PullPythonImageInRegistry
+    jobs:
+      - job: chooseOsAgent
+        pool:
+          vmImage: 'ubuntu-latest'
+      - job: deploymentPod
+        variables:
+          # create stage variable for the job
+          gitVersion: $[ stageDependencies.PullPythonImageInRegistry.buildAndPushWithIncrementVersion.outputs['getVersion.tag'] ]
+        steps:
+          - bash: ls -a
+          - bash: echo $(gitVersion)
+          - bash: sed -i 's/:latest/:$(gitVersion)/g' DMW/k8s/deployment.yml
+          - bash: cat DMW/k8s/deployment.yml
+          - task: Kubernetes@0
+            displayName: 'kubectl get '
+            inputs:
+                kubernetesServiceConnection: testing
+                namespace: 'data-lark'
+                command: 'get'
+                arguments: pods
+          - task: KubernetesManifest@0
+            inputs:
+                kubernetesServiceConnection: testing
+                namespace: data-lark
+                action: deploy
+                manifests: |
+                    DMW/k8s/deployment.yml
+          - script: lsb_release -a 
+          - script: kubectl version --client
+      - job: getCheckHealthStatus
+        dependsOn: deploymentPod
+        steps:
+          - bash: |
+              RESULT=$(curl -I -X get 'https://data-lark.c-6cf2edb.kyma.ondemand.com/app/ping' | awk '{print $2}' | grep 200)
+              echo "##vso[task.setvariable variable=RESULT_CURL;isoutput=true]$RESULT"
+            name: curlWithResultCode
+          - bash: echo $(curlWithResultCode.RESULT_CURL)
+  
+  - stage: 
+    displayName: Test services
+#    condition: ne(dependencies.deploy.outputs['getCheckHealthStatus.curlWithResultCode.RESULT_CURL'], '200')
+    jobs:
+      - job: ERROR
+        variables:
+          testResponce: $[ stageDependencies.deploy.getCheckHealthStatus.outputs['curlWithResultCode.RESULT_CURL'] ]
+#        condition: and(succeeded(), eq(dependencies.deploy.outputs['getCheckHealthStatus.curlWithResultCode.RESULT_CURL'], '200'))
+        steps:
+            - bash: echo $(testResponce)
+            - bash: echo "##vso[task.logissue type=error]Deploy went very wrong."
+              condition: eq(variables['testResponce'], '200')

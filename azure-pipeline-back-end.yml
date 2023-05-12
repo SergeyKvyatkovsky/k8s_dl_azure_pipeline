@@ -1,0 +1,228 @@
+resources:
+  repositories:
+    - repository: pythonModule
+      type: git
+      name: DMW/DataLark.Python
+      ref: develop
+    - repository: devOpsConfigs
+      type: git
+      name: DMW/DataLark.DevOps
+      ref: main
+  pipelines:
+    - pipeline: DDI # Name of the pipeline resource.
+      source: dataLark-build-and-drop-instaler
+      trigger: 
+        tags:
+          - '*'
+
+trigger:
+  tags:
+    include:
+    - '*'
+
+parameters:
+  - name: reason
+    type: string
+    default: $(Build.Reason)  # echo ${{parameters.reason}}
+  - name: SourceBranch
+    type: string
+    default: $(Build.SourceBranch)
+
+variables:
+- group: BuildServerGroup
+- name: tag
+  value: initialValue
+
+stages: 
+  - stage: PullPythonImageInRegistry
+    displayName: PullPythonImageInRegistry
+    jobs:
+      - job: buildAndPushWithIncrementVersion
+        steps:
+          - checkout: self
+          - checkout: pythonModule
+          - bash: ls -a 
+          - powershell: |
+              $с = "$(Build.SourceBranch)"
+              if ($с -like 'refs/tags/*') {
+                  $b = "$(Build.SourceBranch)".Split("/")
+                  $a = $b[2]
+                  Write-Host "##vso[task.setvariable variable=tag;isoutput=true]$a"
+              }
+              else {
+                  $a = "draft.version-v.$(BuildRevision)"
+                  Write-Host "##vso[task.setvariable variable=tag;isoutput=true]$a"
+                }
+            name: getVersion
+          - bash: echo $(getVersion.tag)
+      - job: buildAndPushInDockerFilePython
+        dependsOn: buildAndPushWithIncrementVersion
+        variables: 
+            git_tag: $[ dependencies.buildAndPushWithIncrementVersion.outputs['getVersion.tag'] ]
+        steps:
+          - checkout: self
+          - checkout: pythonModule
+          - bash: ls -a
+          - bash: echo $(git_tag)
+          - task: Docker@2
+            inputs:
+                  containerRegistry: 'datalarkregistry.azurecr.io'
+                  repository: 'data-lark-python-tst'
+                  command: 'buildAndPush'
+                  Dockerfile: 'DMW/DMW/docker/Dockerfile-tst'
+                  buildContext: $(Build.Repository.LocalPath)
+                  tags: |
+                     latest
+                     $(git_tag)
+
+      - job: buildAndPushInDockerFile
+        dependsOn: buildAndPushWithIncrementVersion
+        variables: 
+            git_tag: $[ dependencies.buildAndPushWithIncrementVersion.outputs['getVersion.tag'] ]
+        steps:
+          - checkout: self
+            submodules: 'true'
+            persistCredentials: true
+          - bash: echo $(git_tag)
+          - bash: |
+              dotnet nuget update source datalark_nuget_packages --source "https://leverx.pkgs.visualstudio.com/DMW/_packaging/datalark_nuget_packages_2/nuget/v3/index.json" --username leverx --password llsnbixhjz2n27pul5f4nledileq3r6mu6vsxhkjfgjf3i7tzsgq --store-password-in-clear-text --valid-authentication-types basic --configfile DMW/nuget.config
+              echo "=======================  SRV RESTORE  ====================================="
+              dotnet restore -r linux-x64 DMW/Server/Datalark.Server.App/Datalark.Server.App.csproj --configfile DMW/nuget.config
+              ls -a DMW/Server/Datalark.Server.App
+              dotnet publish -c Release -r linux-x64 DMW/Server/Datalark.Server.App --no-self-contained --no-restore --nologo -o output/server
+              echo "=======================  PLGINS RESTORE =================================="
+              
+              echo "=======================  PLGIN AnySapFunc =================================="
+              chmod 777 DMW/Plugins
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.AnySapFunc --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.AnySapFunc --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/DMW/output/PluginTemplates/AnySapFunc
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/AnySapFunc
+              
+              echo "=======================  PLGIN ChangeMaster =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.ChangeMaster --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.ChangeMaster --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/ChangeMaster
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/ChangeMaster
+              
+              echo "=======================  PLGIN Dir =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.Dir --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.Dir --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/Dir
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/Dir
+
+              echo "=======================  PLGIN ExcelImport =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.ExcelImport --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.ExcelImport --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/ExcelImport
+
+              echo "=======================  PLGIN ExcelExport =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.ExcelExport --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.ExcelExport --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/ExcelExport
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/ExcelExport
+
+              echo "=======================  PLGIN GuiMM =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.GuiMM --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.GuiMM --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/GuiMM
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/GuiMM
+
+              echo "=======================  PLGIN JoinTables =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.JoinTables --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.JoinTables --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/JoinTables
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/JoinTables
+
+              echo "=======================  PLGIN MaterialBom =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.MaterialBom --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.MaterialBom --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/MaterialBom
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/MaterialBom
+
+              echo "=======================  PLGIN MM =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.MM --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.MM --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/MM
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/MM
+
+              echo "=======================  PLGIN PythonSource =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.PythonSource --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.PythonSource --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/PythonSource
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/PythonSource
+
+              echo "=======================  PLGIN PythonTarget =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.PythonTarget --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.PythonTarget --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/PythonTarget
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/PythonTarget
+
+              echo "=======================  PLGIN ReadTable =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.ReadTable --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.ReadTable --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/ReadTable
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/ReadTable
+
+              echo "=======================  PLGIN Recipe =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.Recipe --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.Recipe --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/Recipe
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/Recipe
+
+              echo "=======================  PLGIN Specs =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.Specs --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.Specs --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/Specs
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/Specs
+
+              echo "=======================  PLGIN Transformation =================================="
+              dotnet restore -r linux-x64 DMW/Plugins/Datalark.Plugins.Transformation --configfile DMW/nuget.config
+              dotnet publish -c Release -r linux-x64 DMW/Plugins/Datalark.Plugins.Transformation --no-self-contained --no-restore --nologo -o  /home/vsts/work/1/s/output/PluginTemplates/Transformation
+              ls -a /home/vsts/work/1/s/output/PluginTemplates/Transformation
+
+              echo "=======================  CHECK ALL PLGINS =================================="
+              ls -a DMW/Plugins/
+              ls -la | grep ^d | wc | awk '{print $1 - 2}'
+
+          - task: Docker@2
+            inputs:
+              containerRegistry: 'datalarkregistry.azurecr.io'
+              repository: 'data-lark-tst'
+              command: 'buildAndPush'
+              buildContext: $(Build.Repository.LocalPath)
+              Dockerfile: 'DMW/docker/Dockerfile-server-tst'
+              tags: |
+                 latest
+                 $(git_tag)
+
+#      - job: chooseOsAgent
+#        pool:
+#          vmImage: 'ubuntu-latest'
+      - job: deploymentPod
+        dependsOn: buildAndPushInDockerFile
+        variables: 
+            git_tag: $[ dependencies.buildAndPushWithIncrementVersion.outputs['getVersion.tag'] ]
+        steps:
+          - checkout: devOpsConfigs
+          - bash: ls -a
+          - bash: cat k8s/datalark_db/data-lark_db_deployment.yaml
+          - bash: echo $(git_tag)
+          - bash: echo $(ARANGO_ROOT_PASSWORD)
+          - bash: sed -i 's/ARANGO_ROOT_PASSWORD_/$(ARANGO_ROOT_PASSWORD)/g' k8s/datalark_db/data-lark_db_deployment.yaml
+          - bash: sed -i 's/key/$(REGESTRY_SECRET_MANIFEST)/g' k8s/Secret.yaml
+          - bash: sed -i 's/nginx_password/$(NGINX_PASSWORD)/g' k8s/datalark_SAP_interopt_service/datalark_sap_interopt_configmap.yaml
+#          - bash: sed -i 's/latest/$(git_tag)/g' k8s/datalark_python_interopt_service/datalark_python_interopt_deploy.yaml
+          - bash: cat k8s/datalark_db/data-lark_db_deployment.yaml
+          - task: Kubernetes@0
+            displayName: 'kubectl get '
+            inputs:
+                kubernetesServiceConnection: testing
+                namespace: 'data-lark'
+                command: 'get'
+                arguments: pods
+          - task: KubernetesManifest@0
+            inputs:
+                kubernetesServiceConnection: testing
+                namespace: test-deploy
+                action: deploy
+                manifests: |
+                    k8s/Secret.yaml
+                    k8s/datalark_db/data-lark_db_deployment.yaml
+                    k8s/datalark_db/datalark_db_service.yaml
+                    k8s/datalark_python_interopt_service/datalark_python_interopt_deploy.yaml
+                    k8s/datalark_python_interopt_service/datalark_python_interopt_service.yaml
+                    k8s/datalark_server/datalark_server_deployment.yaml
+                    k8s/datalark_SAP_interopt_service/datalark_sap_interopt_configmap.yaml
+                    k8s/datalark_SAP_interopt_service/datalark_sap_interopt_deploy.yaml
+                    k8s/datalark_SAP_interopt_service/datalark_sap_interopt_service.yaml
+                    k8s/datalark_server/datalark_server_service.yaml
+                    k8s/ingress.yaml
+          - script: lsb_release -a 
+          - script: kubectl version --client

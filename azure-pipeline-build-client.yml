@@ -1,0 +1,137 @@
+trigger:
+   tags:
+     include:
+       - '*'
+
+variables:
+- group: BuildClientGroup
+
+pool: 
+  vmImage: 'windows-latest'
+  
+stages:
+  - stage:  
+    displayName: 
+    jobs:
+      - job: installChoco
+        steps:      
+         - powershell: |
+            # Inno setup install
+            choco install innosetup
+           displayName: 'Phase I: Install Inno Setup '
+         - bash: echo $(AppReleaseVersion)$(versionInstaller)
+
+  - stage: 
+    displayName: 
+    jobs:
+      - job: uGetToolInstaller
+        steps:
+        - checkout: self
+          submodules: fales
+          persistCredentials: true
+        - powershell: |
+            $header = $(git config --get-all http.$(Build.Repository.Uri).extraheader)
+            git -c http.extraheader="$header" submodule sync
+            git -c http.extraheader="$header" submodule update --init --force --depth=1   
+        - task: NuGetToolInstaller@1
+          displayName: 'Phase I: Prepare Package Manager Tool'
+          inputs:
+            versionSpec: 6.5.0
+            checkLatest: true
+
+        - task: NuGetCommand@2
+          displayName: 'Phase I: Restore Solution Dependencies'
+          inputs:
+            command: restore
+            restoreSolution: DMW/Datalark.sln
+            feedsToUse: config
+            nugetConfigPath: DMW/nuget.config
+            externalFeedCredentials: 'DevExpress Nuget'
+            noCache: true
+          continueOnError: true
+
+        - task: VSBuild@1
+          displayName: 'Phase II: Build Solution (Release mode)'
+          inputs:
+            solution: DMW/Datalark.sln
+            msbuildArgs: '/p:Version=$(AppReleaseVersion)$(versionInstaller)'
+            platform: '$(BuildPlatform)'
+            configuration: '$(BuildConfiguration)'
+            clean: true
+            msbuildArchitecture: x64
+        - powershell: 'xcopy "DMW\bin\Release\*" "DMW\.build\" /Q /E'
+
+        - task: stefankert.codesigning.codesigning-task.codesigning@2
+          displayName: 'Phase II: Code Signing (*.dll)'
+          inputs:
+            secureFileId: 'leverx_code_sign.pfx'
+            signCertPassword: '$(CertificatePassword)'
+            files: 'DMW/.build/**/*.dll'  
+
+        - task: stefankert.codesigning.codesigning-task.codesigning@2
+          displayName: 'Phase II: Code Signing (*.exe)'
+          inputs:
+            secureFileId: 'leverx_code_sign.pfx'
+            signCertPassword: '$(CertificatePassword)'
+            files: 'DMW/.build/**/*.exe'
+
+        - task: UniversalPackages@0
+          displayName: 'Phase II: Installers - ArangoDB'
+          inputs:
+            downloadDirectory: DMW/.build/installers
+            vstsFeed: 'c4980b7b-a255-42dc-9fd3-9804decdf688/dc514424-30f8-45ca-afac-3db52ba10dc2'
+            vstsFeedPackage: '1523ec54-f149-4878-98eb-8b5606bb0196'
+            vstsPackageVersion: 3.10.3       
+        - task: UniversalPackages@0
+          displayName: 'Phase II: Installers - .NET Core Runtime'
+          inputs:
+            downloadDirectory: DMW/.build/installers
+            vstsFeed: 'c4980b7b-a255-42dc-9fd3-9804decdf688/dc514424-30f8-45ca-afac-3db52ba10dc2'
+            vstsFeedPackage: '363341a0-da3a-4070-af86-154e309ea339'
+            vstsPackageVersion: 7.0.3
+        - task: UniversalPackages@0
+          displayName: 'Phase II: Installers - ASP.NET Core Hosting'
+          inputs:
+            downloadDirectory: DMW/.build/installers
+            vstsFeed: 'c4980b7b-a255-42dc-9fd3-9804decdf688/dc514424-30f8-45ca-afac-3db52ba10dc2'
+            vstsFeedPackage: '017237a6-5ad0-425c-8561-7a5330ddfbdb'
+            vstsPackageVersion: 7.0.3
+        - task: UniversalPackages@0
+          displayName: 'Phase II: Installers - .NET Framework 4.8.0'
+          inputs:
+            downloadDirectory: DMW/.build/installers
+            vstsFeed: 'c4980b7b-a255-42dc-9fd3-9804decdf688/dc514424-30f8-45ca-afac-3db52ba10dc2'
+            vstsFeedPackage: '7f6a715d-6b07-48a2-8c37-e5f2a731ffd3'
+            vstsPackageVersion: 1.0.0
+        - task: UniversalPackages@0
+          displayName: 'Phase II: Installers - MSVS C++ 2010'
+          inputs:
+            downloadDirectory: DMW/.build/installers
+            vstsFeed: 'c4980b7b-a255-42dc-9fd3-9804decdf688/dc514424-30f8-45ca-afac-3db52ba10dc2'
+            vstsFeedPackage: 'bc29bfbe-70cc-4325-979e-8c053e4fa9e3'
+            vstsPackageVersion: 1.0.1
+        - task: UniversalPackages@0
+          displayName: 'Phase II: Installers - MSVS C++ 2022'
+          inputs:
+            downloadDirectory: DMW/.build/installers
+            vstsFeed: 'c4980b7b-a255-42dc-9fd3-9804decdf688/dc514424-30f8-45ca-afac-3db52ba10dc2'
+            vstsFeedPackage: '265fcafb-ad42-4190-a4b6-9e490d87aa49'
+            vstsPackageVersion: 14.34.31938
+        - powershell: |
+            tree /f
+            iscc.exe DMW\\DMW.Release.DeploymentScript.iss /DAppVersion=$(AppReleaseVersion)$(versionInstaller)
+          displayName: 'Phase II: Build Inno Setup installer'
+        - task: stefankert.codesigning.codesigning-task.codesigning@2
+          displayName: 'Phase III: Installer Signing'
+          inputs:
+            secureFileId: 'leverx_code_sign.pfx'
+            signCertPassword: '$(CertificatePassword)'
+            files: 'DMW/Datalark_Installer_*.exe'
+        - task: CopyFiles@2
+          displayName: 'Phase III: Deploy Installer Artifact'
+          inputs:
+            SourceFolder: '$(system.defaultworkingdirectory)\DMW'
+            Contents: 'Datalark_Installer_*.exe'
+            TargetFolder: '$(build.artifactstagingdirectory)\DMW\relesases'
+        - task: PublishBuildArtifacts@1
+          displayName: 'Phase III: Publish Artifact to drop'
