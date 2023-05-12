@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-python-module
+  labels:
+    app: data-python-module
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-python-module
+  template:
+    metadata:
+      labels:
+        app: data-python-module
+    spec:
+      imagePullSecrets:
+      - name: azcr
+      containers:
+      - name: data-python-module
+        image: datalarkregistry.azurecr.io/docker-python-by-sergey:v.sergo.v.2
+        env:
+        - name: DL_PYT_ENVIRONMENT
+          value: docker_linux
+        - name: DL_PYT_MAIN_SERVER_URL
+          value: "{docker_linux='data-lark-core-srv-inside'}"
+        - name: DL_PYT_SAP_URL
+          value: "{docker_linux='interop-datalark-service'}"
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 50052
+          - containerPort: 50053

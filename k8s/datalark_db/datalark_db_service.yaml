@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: arango-connect-service-inside
+spec:
+  selector:
+    app: arango-db
+    tier: arango-db
+  ports:
+    - protocol: TCP
+      port: 8529
+      targetPort: 8529
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: arango-connect-service-out
+spec:
+  ports:
+    - protocol: TCP
+      port: 443
+      targetPort: 8529
+  selector:
+    app: arango-db

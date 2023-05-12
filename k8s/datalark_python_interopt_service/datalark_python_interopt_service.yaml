@@ -1,0 +1,27 @@
+#python
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-lark-python-module-connect-service-inside-50053
+spec:
+  type: ClusterIP
+  selector:
+    app: data-python-module
+  ports:
+    - protocol: TCP
+      port: 50053
+      targetPort: 50053
+---
+#python
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-lark-python-module-connect-service-inside-50052
+spec:
+  type: ClusterIP
+  selector:
+    app: data-python-module
+  ports:
+    - protocol: TCP
+      port: 50052
+      targetPort: 50052

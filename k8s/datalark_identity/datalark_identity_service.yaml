@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: azure-identity
+spec:
+  type: LoadBalancer
+  ports:
+    - protocol: TCP
+      port: 443
+      targetPort: 443
+  selector:
+    app: data-indentity

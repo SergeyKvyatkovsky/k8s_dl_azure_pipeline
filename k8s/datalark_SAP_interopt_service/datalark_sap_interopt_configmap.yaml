@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |
+    server {
+    listen 8888;
+    server_name _;
+
+    location / {
+        proxy_set_header pass nginx_password;
+        proxy_pass https://interopvm.eastus.cloudapp.azure.com;
+      }
+    }

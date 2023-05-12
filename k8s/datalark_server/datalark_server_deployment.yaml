@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-lark-core-srv
+  labels:
+    app: data-lark-core-srv
+    tier: data-lark-core-srv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-lark-core-srv
+  template:
+    metadata:
+      labels:
+        app: data-lark-core-srv
+        tier: data-lark-core-srv
+    spec:
+      imagePullSecrets:
+      - name: azcr
+      containers:
+      - name: data-lark-core-srv
+        image: datalarkregistry.azurecr.io/docker-srv-core-by-denis:v.2
+        env:
+        - name: DL_SRV_DatabaseInstanceConfig__HttpUri
+          value: "http://arango-connect-service-inside:8529"
+        - name: DL_SRV_DatabaseInstanceConfig__HttpsUri
+          value: "https://arango-connect-service-inside:8529"
+        - name: DL_SRV_PythonServiceConfig__HttpUri
+          value: http://data-lark-python-module-connect-service-inside-50052:50052
+        - name: DL_SRV_PythonServiceConfig__HttpsUri
+          value: http://data-python-module-53:50053
+        - name: DL_SRV_SAP_URL
+          value: http://interop-datalark-service:8888
+        - name: DL_SRV_SapServiceConfig__HttpUri
+          value: http://interop-datalark-service:8888
+        - name: DOTNET_ENVIRONMENT
+          value: "docker_linux"
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 49358
+          - containerPort: 49359

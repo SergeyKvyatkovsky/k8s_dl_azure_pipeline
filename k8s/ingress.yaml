@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+  annotations:
+    kubernetes.io/ingress.class: istio
+spec:
+  tls:
+    - hosts:
+        - arangobdisheresecond.c-6cf2edb.kyma.ondemand.com
+        - coreisheresecond.c-6cf2edb.kyma.ondemand.com
+      secretName: kyma-gateway-certs
+  rules:
+    - host: arangobdisheresecond.c-6cf2edb.kyma.ondemand.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: arango-connect-service-out
+                port:
+                  number: 443
+    - host: coreisheresecond.c-6cf2edb.kyma.ondemand.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: data-lark-core-srv
+                port:
+                  number: 443

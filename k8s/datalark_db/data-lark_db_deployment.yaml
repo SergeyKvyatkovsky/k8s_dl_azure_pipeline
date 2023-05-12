@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arango-db
+  labels:
+    app: arango-db
+    tier: arango-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arango-db
+  template:
+    metadata:
+      labels:
+        app: arango-db
+        tier: arango-db
+    spec:
+      imagePullSecrets:
+      - name: azcr
+      containers:
+      - name: arango-db
+        image: datalarkregistry.azurecr.io/arango:latest
+        env:
+        - name: ARANGO_ROOT_PASSWORD
+          value: ARANGO_ROOT_PASSWORD_
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8529  
+            protocol: TCP

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-indentity
+  labels:
+    app: data-indentity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-indentity
+  template:
+    metadata:
+      labels:
+        app: data-indentity
+    spec:
+      imagePullSecrets:
+        - name: azcr
+      containers:
+        - name: data-indentity
+          image: datalarkregistry.azurecr.io/identity-server:v.0.0.0.18
+          env:
+            - name: ASPNETCORE_ArangoConnection
+              value: >-
+                Server=http://arango-connect-service-inside:8529;User=root;Password=z12xc34vb5;
+            - name: ASPNETCORE_URLS
+              value: 'https://+;http://+;'
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+            - containerPort: 5001

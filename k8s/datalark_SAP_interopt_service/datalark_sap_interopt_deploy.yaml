@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datalark-nginx
+  labels:
+    nginx: datalark
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      nginx: datalark
+  template:
+    metadata:
+      labels:
+        nginx: datalark
+    spec:
+      restartPolicy: Always
+      volumes:
+      - name: config-volume
+        configMap:
+          name: nginx-config
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/nginx/conf.d/
+          readOnly: false
+        ports:
+        - containerPort: 8888
+        resources:
+          limits:
+            cpu: 100m
+            memory: 200Mi
+          requests:
+            cpu: 0m
+            memory: 0Mi
